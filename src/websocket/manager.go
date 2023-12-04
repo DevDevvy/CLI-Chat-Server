@@ -50,10 +50,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	chatRoom.SetUsername(conn, authResponse.Username)
 	chatRoom.AddClient(conn, authResponse.Username)
 
-	// Announce the new user connection to all clients
 	username := chatRoom.GetUsername(conn)
-	announcement := fmt.Sprintf("%s has joined. Connected Users: %s", username, chatRoom.GetConnectedUserList())
-	chatRoom.Broadcast(conn, []byte(announcement))
 
 	// Send the initial list of connected users to the newly connected user
 	chatRoom.SendUserList(conn)

@@ -2,27 +2,18 @@
 package websocket
 
 import (
+	"fmt"
 	"log"
+	"math/rand"
 	"strings"
-	"sync"
 
 	"github.com/gorilla/websocket"
 )
 
-type Message struct {
-	Sender  *websocket.Conn
-	Content []byte
-}
+// Available colors starts as a copy of the colors slice
+var availableColors = append([]string(nil), colors...)
 
 // ChatRoom represents a chat room with connected clients
-type ChatRoom struct {
-	clients   map[*websocket.Conn]bool
-	usernames map[*websocket.Conn]string
-	messages  chan Message
-	mutex     sync.Mutex
-	startOnce sync.Once // Ensures StartBroadcasting is started only once
-}
-
 func NewChatRoom() *ChatRoom {
 	return &ChatRoom{
 		clients:   make(map[*websocket.Conn]bool),
@@ -33,12 +24,26 @@ func NewChatRoom() *ChatRoom {
 
 // AddClient adds a new client to the chat room
 func (cr *ChatRoom) AddClient(client *websocket.Conn, username string) {
+
+	// If there are no more available colors, reset the list
+	if len(availableColors) == 0 {
+		availableColors = append([]string(nil), colors...)
+	}
+
+	// Choose a random color from the available colors
+	index := rand.Intn(len(availableColors))
+	color := availableColors[index]
+
+	// Remove the chosen color from the available colors
+	availableColors = append(availableColors[:index], availableColors[index+1:]...)
+
+	cr.usernames[client] = color + username + "\033[0m" // Reset color after username
+
 	cr.mutex.Lock()
 	cr.clients[client] = true
-	cr.usernames[client] = username
 	cr.mutex.Unlock()
 
-	// Broadcast that the new user has joined
+	// Broadcast that the new user has joined, along with the updated list of connected users
 	message := username + " has joined. Connected Users: " + cr.GetConnectedUserList()
 	cr.Broadcast(client, []byte(message))
 }
@@ -113,16 +118,20 @@ func (cr *ChatRoom) GetConnectedUserList() string {
 	return strings.Join(userList, ", ")
 }
 
-// Broadcast sends a message to all connected clients except the sender
+// Use the color when broadcasting messages
 func (cr *ChatRoom) Broadcast(sender *websocket.Conn, message []byte) {
-	log.Println("Broadcast")
-
 	cr.mutex.Lock()
 	defer cr.mutex.Unlock()
 
-	// Send the message to the messages channel
-	cr.messages <- Message{Sender: sender, Content: message}
-	log.Println("Broadcasted message: ", string(message))
+	for client := range cr.clients {
+		if client != sender {
+			formattedMessage := fmt.Sprintf("%s", string(message))
+			err := client.WriteMessage(websocket.TextMessage, []byte(formattedMessage))
+			if err != nil {
+				log.Printf("Error sending message to client: %v", err)
+			}
+		}
+	}
 }
 
 // Start broadcasting messages in a separate goroutine
