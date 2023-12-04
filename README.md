@@ -27,3 +27,15 @@ The goal of this project is to create a command-line interface (CLI) chatroom ap
    ```bash
    git clone https://github.com/devdevvy/CLI-Chat-Server.git
    cd CLI-Chat-Server
+2. For local testing I used websocat which requires cargo from Rust to install. For Mac, I installed Rust using homebrew, then websocat with cargo
+   ```bash
+   brew install rust
+   cargo install websocat
+3. Start the server by being in the src folder and starting main.go
+   ```bash
+   go run main.go
+4. In another terminal window run this command to connect
+   ```bash
+   websocat ws://localhost:8080/ws
+5. Input default password - "password" and choose your username
+6. Send messages
