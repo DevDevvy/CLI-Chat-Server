@@ -9,34 +9,38 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type Message struct {
+	Sender  *websocket.Conn
+	Content []byte
+}
+
 // ChatRoom represents a chat room with connected clients
 type ChatRoom struct {
 	clients   map[*websocket.Conn]bool
 	usernames map[*websocket.Conn]string
+	messages  chan Message
 	mutex     sync.Mutex
+	startOnce sync.Once // Ensures StartBroadcasting is started only once
 }
 
 func NewChatRoom() *ChatRoom {
 	return &ChatRoom{
 		clients:   make(map[*websocket.Conn]bool),
 		usernames: make(map[*websocket.Conn]string),
+		messages:  make(chan Message, 256), // Buffered channel for messages
 	}
 }
 
 // AddClient adds a new client to the chat room
-func (cr *ChatRoom) AddClient(client *websocket.Conn) {
+func (cr *ChatRoom) AddClient(client *websocket.Conn, username string) {
 	cr.mutex.Lock()
-	defer cr.mutex.Unlock()
 	cr.clients[client] = true
+	cr.usernames[client] = username
+	cr.mutex.Unlock()
 
-	// Retrieve the username associated with the client
-	username, exists := cr.usernames[client]
-	if !exists {
-		log.Printf("Error: No username found for client %v", client)
-	}
-
-	log.Printf("Client %v (%s) added. Total clients: %d", client, username, len(cr.clients))
-
+	// Broadcast that the new user has joined
+	message := username + " has joined. Connected Users: " + cr.GetConnectedUserList()
+	cr.Broadcast(client, []byte(message))
 }
 
 // RemoveClient removes a client from the chat room
@@ -112,16 +116,31 @@ func (cr *ChatRoom) GetConnectedUserList() string {
 // Broadcast sends a message to all connected clients except the sender
 func (cr *ChatRoom) Broadcast(sender *websocket.Conn, message []byte) {
 	log.Println("Broadcast")
+
 	cr.mutex.Lock()
 	defer cr.mutex.Unlock()
 
-	for client := range cr.clients {
-		log.Printf("client: %v", client)
-		// if client != sender {
-		err := client.WriteMessage(websocket.TextMessage, message)
-		if err != nil {
-			log.Printf("Error broadcasting message: %v", err)
-			// }
+	// Send the message to the messages channel
+	cr.messages <- Message{Sender: sender, Content: message}
+	log.Println("Broadcasted message: ", string(message))
+}
+
+// Start broadcasting messages in a separate goroutine
+func (cr *ChatRoom) StartBroadcasting() {
+	log.Printf("StartBroadcasting, chatroom: %v", cr)
+	for msg := range cr.messages {
+		log.Printf("Received message from channel: %s\n", string(msg.Content))
+
+		cr.mutex.Lock()
+		log.Printf("Number of connected clients: %d\n", len(cr.clients)) // Add this line
+		for client := range cr.clients {
+			if client != nil && client != msg.Sender {
+				err := client.WriteMessage(websocket.TextMessage, msg.Content)
+				if err != nil {
+					log.Printf("Error broadcasting message: %v", err)
+				}
+			}
 		}
+		cr.mutex.Unlock()
 	}
 }
